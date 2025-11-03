@@ -1,36 +1,50 @@
-// src/components/Post/CreatePostForm.jsx
 import React, { useState } from 'react';
 import { createPost } from '../../services/api';
 
 function CreatePostForm({ onPostCreated }) {
   const [content, setContent] = useState('');
-  // --- NEW STATE FOR HASHTAGS ---
   const [hashtags, setHashtags] = useState('');
-  // ------------------------------
+  // 🌟 NEW STATE: To hold the selected image file 🌟
+  const [selectedFile, setSelectedFile] = useState(null);
+  // ----------------------------------------------
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState('');
 
+  const handleFileChange = (event) => {
+    // Get the first file selected by the user
+    setSelectedFile(event.target.files[0]);
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!content.trim()) {
-      setError('Post content cannot be empty.');
+
+    // Validation: Must have content OR an image
+    if (!content.trim() && !selectedFile) {
+      setError('Please provide post content or select an image.');
       return;
     }
 
     setIsPosting(true);
     setError('');
 
-    // Send both content and hashtags to the API service
-    const postData = {
-      content: content,
-      hashtags: hashtags, // Will be processed by the API function
-    };
+    // 🌟 Use FormData for multipart/form-data payload 🌟
+    const formData = new FormData();
+    formData.append('content', content);
+    formData.append('hashtags', hashtags);
 
-    createPost(postData)
+    if (selectedFile) {
+      // Key MUST match 'postImage' as defined in server.js's upload.single('postImage')
+      formData.append('postImage', selectedFile); 
+    }
+    // ----------------------------------------------------
+
+    // Note: createPost in api.js must be updated to handle FormData correctly
+    createPost(formData) 
       .then(response => {
         console.log('Post created!', response.data);
         setContent(''); // Clear content
         setHashtags(''); // Clear hashtags
+        setSelectedFile(null); // Clear selected file
         onPostCreated(); // Tell the parent component to refresh/close
       })
       .catch(err => {
@@ -53,10 +67,22 @@ function CreatePostForm({ onPostCreated }) {
           placeholder="What's on your mind? (Your post content)"
           rows="5"
           disabled={isPosting}
-          required
+          style={{ marginBottom: '10px' }}
+          
         />
-        
-        {/* --- NEW HASHTAGS TEXTAREA --- */}
+        
+        {/* 🌟 NEW: File Input 🌟 */}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          disabled={isPosting}
+          style={{ display: 'block', marginBottom: '10px' }}
+        />
+        {selectedFile && <p style={{ fontSize: '0.8rem', color: '#555' }}>Selected: {selectedFile.name}</p>}
+        {/* ------------------------- */}
+
+        {/* --- HASHTAGS TEXTAREA --- */}
         <textarea
           value={hashtags}
           onChange={(e) => setHashtags(e.target.value)}

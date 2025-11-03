@@ -8,18 +8,7 @@ function Post({ post }) {
   const [hashtags, setHashtags] = useState([]);
   const [showComments, setShowComments] = useState(false);
 
-  // When the component loads, fetch its own hashtags
-  useEffect(() => {
-    if (post.post_id) {
-        getHashtagsForPost(post.post_id)
-        .then(response => {
-          setHashtags(response.data);
-        })
-        .catch(err => {
-          console.error(`Error fetching hashtags for post ${post.post_id}:`, err);
-        });
-    }
-  }, [post.post_id]); // Re-run if the post ID changes
+  // ... (existing useEffect for fetching hashtags)
 
   return (
     <div className="post-container">
@@ -33,15 +22,24 @@ function Post({ post }) {
       </div>
       <div className="post-content">
         <p>{post.content}</p>
+
+        {/* 🌟 NEW: Display Image if image_url exists 🌟 */}
+        {post.image_url && (
+            <div className="post-image-wrapper">
+                {/* The source must be the full path to the server's static folder */}
+                <img 
+                    src={`http://localhost:3001/${post.image_url}`} 
+                    alt="Post media" 
+                    style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px', marginTop: '10px' }}
+                />
+            </div>
+        )}
+        {/* ------------------------------------------- */}
+
       </div>
       <div className="post-footer">
-        <div className="post-hashtags">
-          {hashtags.map((tag, index) => (
-            <span key={index} className="post-hashtag">
-              #{tag.hashtag}
-            </span>
-          ))}
-        </div>
+        {/* ... (rest of the footer) */}
+        
         <button 
           className="comment-button"
           onClick={() => setShowComments(!showComments)}

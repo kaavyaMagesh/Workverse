@@ -1,4 +1,3 @@
-// src/services/api.js
 import axios from 'axios';
 
 // The base URL for your back-end server
@@ -59,6 +58,16 @@ export const addCommentToPost = (postId, commentData) => {
 export const getUserProfile = (userId) => {
   return apiClient.get(`/users/${userId}`);
 };
+
+// 🌟 FIX: Adding the missing function 🌟
+export const uploadProfilePicture = (formData) => {
+    // formData contains the file and is sent to the backend's dedicated upload endpoint.
+    // This is the function that ProfilePage.jsx was crashing due to its absence.
+    return apiClient.post('/upload/profile', formData);
+};
+// ---------------------------------------------
+
+
 export const getConnectionCount = (userId) => {
   return apiClient.get(`/users/${userId}/connections`);
 };
@@ -90,10 +99,10 @@ export const sendMessage = (messageData) => {
 // === SEARCH ENDPOINT (FIXED) ===
 // =================================================================
 /**
- * Fetches user profiles matching a search query.
- * The query is passed as a URL parameter (e.g., /search/users?q=name).
- * @param {string} query - The search term.
- */
+ * Fetches user profiles matching a search query.
+ * The query is passed as a URL parameter (e.g., /search/users?q=name).
+ * @param {string} query - The search term.
+ */
 export const searchUsers = (query) => {
   return apiClient.get('/search/users', { params: { q: query } });
 };
@@ -112,14 +121,14 @@ export const createJob = (jobData) => {
 // In src/services/api.js (Add these)
 // ...
 export const searchPosts = (query) => {
-    return apiClient.get('/search/posts', { params: { q: query } });
+    return apiClient.get('/search/posts', { params: { q: query } });
 };
 
 export const searchHashtags = (query) => {
-    return apiClient.get('/search/hashtags', { params: { q: query } });
+    return apiClient.get('/search/hashtags', { params: { q: query } });
 };
 // ...
 
 export const getPostById = (postId) => {
-    return apiClient.get(`/posts/${postId}`);
+    return apiClient.get(`/posts/${postId}`);
 };

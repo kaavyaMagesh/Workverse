@@ -46,7 +46,7 @@ function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-logo">
-        <Link to="/">DuplinkedIn</Link>
+        <Link to="/">WorkVerse</Link>
       </div>
       
       {/* --- Search Form (Functional, Only visible when logged in) --- */}

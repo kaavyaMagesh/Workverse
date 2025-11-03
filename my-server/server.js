@@ -3,6 +3,9 @@ const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+// --- NEW IMPORTS FOR FILE UPLOAD ---
+const multer = require('multer');
+const path = require('path'); 
 // Removed: const bcrypt = require('bcrypt'); 
 
 const app = express();
@@ -12,12 +15,16 @@ const port = 3001;
 app.use(cors());
 app.use(express.json());
 
+// --- SERVE STATIC FILES (IMAGES) ---
+app.use('/uploads', express.static('uploads'));
+// ------------------------------------
+
 // --- 2. Database Connection ---
 const dbConnection = mysql.createConnection({
   host: 'localhost',
   user: 'root', // Your user
-  password: 'Pa16Mi16MySQL', // Your password
-  database: 'mythreyee_24011102062' // Your database
+  password: 'Aloha@1125', // Your password
+  database: 'duplinkedin' // Your database
 });
 
 dbConnection.connect(err => {
@@ -56,6 +63,21 @@ const protectRoute = (req, res, next) => {
     res.status(400).json({ error: 'Invalid token.' });
   }
 };
+
+// --- MULTER CONFIGURATION ---
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Must match the folder you created
+        cb(null, 'uploads/'); 
+    },
+    filename: (req, file, cb) => {
+        // Create a unique filename: user_ID + current_timestamp + original_extension
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, req.userId + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage });
+// ----------------------------
 
 // --- 5. API Endpoints ---
 
@@ -129,12 +151,12 @@ app.post('/api/login', (req, res) => {
 
 // --- POST ENDPOINTS ---
 
-// GET /api/posts (FIXED for SQL Syntax Error)
+// GET /api/posts - Fetch all posts (UPDATED TO INCLUDE image_url)
 app.get('/api/posts', protectRoute, (req, res) => {
   const sortOrder = req.query.sort === 'oldest' ? 'ASC' : 'DESC';
 
-  // CRITICAL FIX: Clean single-line query
-  const query = "SELECT posts.post_id, posts.content, posts.content_sent_at, posts.user_id, users.name FROM posts JOIN users ON posts.user_id = users.user_id ORDER BY posts.content_sent_at " + sortOrder;
+  // CRITICAL FIX: Include image_url in SELECT
+  const query = "SELECT posts.post_id, posts.content, posts.content_sent_at, posts.user_id, posts.image_url, users.name FROM posts JOIN users ON posts.user_id = users.user_id ORDER BY posts.content_sent_at " + sortOrder;
   
   dbConnection.query(query, (err, results) => {
     if (err) {
@@ -145,13 +167,17 @@ app.get('/api/posts', protectRoute, (req, res) => {
   });
 });
 
-// POST /api/posts - MODIFIED TO HANDLE HASHTAGS
-app.post('/api/posts', protectRoute, (req, res) => {
+// POST /api/posts - Handle post creation with text, hashtags, and image (UPDATED)
+app.post('/api/posts', protectRoute, upload.single('postImage'), (req, res) => {
+  // req.body contains text fields (content, hashtags)
   const { content, hashtags } = req.body; 
   const userId = req.userId;
+  
+  // Get file path if a file was uploaded
+  const imagePath = req.file ? req.file.path.replace(/\\/g, '/') : null; 
 
-  if (!content) {
-    return res.status(400).json({ error: 'Post content is required.' });
+  if (!content && !imagePath) {
+    return res.status(400).json({ error: 'Post content or an image is required.' });
   }
   
   // 1. Process hashtags
@@ -160,10 +186,10 @@ app.post('/api/posts', protectRoute, (req, res) => {
     .filter(tag => tag.length > 0)
     : [];
   
-  // 2. Insert the main post to get the POST_ID
-  const postQuery = 'INSERT INTO posts (content, content_sent_at, user_id) VALUES (?, NOW(), ?)';
+  // 2. Insert the main post to get the POST_ID (UPDATED TO INCLUDE image_url)
+  const postQuery = 'INSERT INTO posts (content, content_sent_at, user_id, image_url) VALUES (?, NOW(), ?, ?)';
   
-  dbConnection.query(postQuery, [content, userId], (err, results) => {
+  dbConnection.query(postQuery, [content, userId, imagePath], (err, results) => {
     if (err) {
       console.error("Database error on post creation:", err);
       return res.status(500).json({ error: err.message });
@@ -188,11 +214,12 @@ app.post('/api/posts', protectRoute, (req, res) => {
   });
 });
 
-// GET /api/posts/:postId - Get a single post by ID (Needed for PostViewPage)
+// GET /api/posts/:postId - Get a single post by ID (UPDATED TO INCLUDE image_url)
 app.get('/api/posts/:postId', protectRoute, (req, res) => {
     const postId = req.params.postId;
     
-    const query = "SELECT p.post_id, p.content, p.content_sent_at, p.user_id, u.name FROM posts p JOIN users u ON p.user_id = u.user_id WHERE p.post_id = ?";
+    // CRITICAL FIX: Include p.image_url in SELECT
+    const query = "SELECT p.post_id, p.content, p.content_sent_at, p.user_id, p.image_url, u.name FROM posts p JOIN users u ON p.user_id = u.user_id WHERE p.post_id = ?";
     
     dbConnection.query(query, [postId], (err, results) => {
         if (err) {
@@ -326,15 +353,38 @@ app.get('/api/search/hashtags', protectRoute, (req, res) => {
     });
 });
 
+// POST /api/upload/profile - Uploads a profile picture and saves path to DB
+app.post('/api/upload/profile', protectRoute, upload.single('profileImage'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded.' });
+    }
 
-// GET /api/users/:userId - Get User Profile (CRITICAL FIX APPLIED)
+    const filePath = req.file.path.replace(/\\/g, '/'); // Normalize path for database
+    const userId = req.userId;
+
+    const query = 'UPDATE users SET profile_image_url = ? WHERE user_id = ?';
+
+    dbConnection.query(query, [filePath, userId], (err, results) => {
+        if (err) {
+            console.error('Database error updating profile image:', err);
+            return res.status(500).json({ error: err.message });
+        }
+        res.json({ 
+            message: 'Profile picture uploaded successfully!', 
+            url: filePath 
+        });
+    });
+});
+
+
+// GET /api/users/:userId - Get User Profile (UPDATED TO INCLUDE image_url and status checks)
 app.get('/api/users/:userId', protectRoute, (req, res) => {
     const userId = req.params.userId;
     const profileUserId = parseInt(userId); // Convert URL parameter to integer once
     const currentUserId = req.userId; // Guaranteed integer from JWT payload
 
-    // CRITICAL FIX 1: Clean single-line query for user data
-    const userQuery = "SELECT user_id, name, headline, summary, description FROM users WHERE user_id = ?";
+    // CRITICAL FIX 1: Include profile_image_url
+    const userQuery = "SELECT user_id, name, headline, summary, description, profile_image_url FROM users WHERE user_id = ?";
     
     // Use the INTEGER version of the ID for the query
     dbConnection.query(userQuery, [profileUserId], (err, userResults) => {
@@ -354,12 +404,16 @@ app.get('/api/users/:userId', protectRoute, (req, res) => {
         }
         
         // 2. Fetch Connection Status
+        // Ensure IDs are ordered to prevent CHECK CONSTRAINT VIOLATED error
+        const id1 = Math.min(currentUserId, profileUserId);
+        const id2 = Math.max(currentUserId, profileUserId);
+
         // CRITICAL FIX 2: Clean single-line query for connection status
-        const connectionQuery = "SELECT status, connection1_id FROM connections WHERE (connection1_id = ? AND connection2_id = ?) OR (connection1_id = ? AND connection2_id = ?)";
+        // NOTE: The connection query itself is correct. The status check below needs the fix.
+        const connectionQuery = "SELECT status, connection1_id FROM connections WHERE connection1_id = ? AND connection2_id = ?";
         
-        // Ensure all parameters passed to the DB for connection IDs are integers
-        dbConnection.query(connectionQuery, 
-          [currentUserId, profileUserId, profileUserId, currentUserId], 
+        dbConnection.query(connectionQuery, 
+          [id1, id2], 
           (err, connectionResults) => {
             if (err) {
                 console.error('Database error fetching connection status:', err);
@@ -369,22 +423,26 @@ app.get('/api/users/:userId', protectRoute, (req, res) => {
             if (connectionResults.length === 0) {
                 userProfile.connectionStatus = 'not_connected';
                 return res.json(userProfile);
-            } 
-            
+            } 
+            
             const connection = connectionResults[0];
-            
-            if (connection.status === 'accepted') {
+           
+            // --- FIX 1: Check against integer status (1 for accepted, 0 for pending) ---
+            if (connection.status === 1) { 
                 userProfile.connectionStatus = 'connected';
                 return res.json(userProfile);
-            
-            } else if (connection.status === 'pending') {
-                if (connection.connection1_id === currentUserId) {
+            
+            } else if (connection.status === 0) { 
+                // Determine if the current user SENT or RECEIVED the request
+                const isSender = connection.connection1_id === currentUserId;
+
+                if (isSender) {
                     userProfile.connectionStatus = 'pending_sent';
                 } else {
                     userProfile.connectionStatus = 'pending_received';
                 }
                 return res.json(userProfile);
-            
+            
             } else {
                 userProfile.connectionStatus = 'not_connected';
                 return res.json(userProfile);
@@ -399,7 +457,7 @@ app.get('/api/users/:userId/connections', protectRoute, (req, res) => {
     const profileIdInt = parseInt(userId); // Convert URL parameter to integer
 
     // CRITICAL FIX: Clean single-line query
-    const query = "SELECT COUNT(*) as count FROM connections WHERE (connection1_id = ? OR connection2_id = ?) AND status = 'accepted'";
+    const query = "SELECT COUNT(*) as count FROM connections WHERE (connection1_id = ? OR connection2_id = ?) AND status = 1"; // Check for status = 1 (accepted)
     
     dbConnection.query(query, [profileIdInt, profileIdInt], (err, results) => {
         if (err) {
@@ -415,7 +473,7 @@ app.get('/api/users/:userId/connections', protectRoute, (req, res) => {
 app.get('/api/connections', protectRoute, (req, res) => {
   const userId = req.userId;
   // CRITICAL FIX: Clean single-line query
-  const query = "SELECT u.user_id, u.name, u.headline FROM users u JOIN connections c ON (u.user_id = c.connection2_id OR u.user_id = c.connection1_id) WHERE (c.connection1_id = ? OR c.connection2_id = ?) AND c.status = 'accepted' AND u.user_id != ?";
+  const query = "SELECT u.user_id, u.name, u.headline FROM users u JOIN connections c ON (u.user_id = c.connection2_id OR u.user_id = c.connection1_id) WHERE (c.connection1_id = ? OR c.connection2_id = ?) AND c.status = 1 AND u.user_id != ?"; // Check for status = 1
   
   dbConnection.query(query, [userId, userId, userId], (err, results) => {
     if (err) {
@@ -426,10 +484,11 @@ app.get('/api/connections', protectRoute, (req, res) => {
   });
 });
 
+// GET /api/connections/all - FIX 3: Check for integer status and map to string
 app.get('/api/connections/all', protectRoute, (req, res) => {
   const userId = req.userId;
-  // CRITICAL FIX: Clean single-line query
-  const query = "SELECT u.user_id, u.name, u.headline, MAX(c.status) as status, MAX(CASE WHEN c.connection1_id = ? THEN 'sent' ELSE 'received' END) as request_direction FROM users u LEFT JOIN connections c ON (c.connection1_id = u.user_id AND c.connection2_id = ?) OR (c.connection1_id = ? AND c.connection2_id = u.user_id) WHERE u.user_id != ? GROUP BY u.user_id, u.name, u.headline";
+  // CRITICAL FIX: The entire query is simplified to use MAX(status)
+  const query = "SELECT u.user_id, u.name, u.headline, MAX(c.status) as status, MAX(CASE WHEN c.connection1_id = ? THEN 1 ELSE 0 END) as is_sender FROM users u LEFT JOIN connections c ON (c.connection1_id = u.user_id AND c.connection2_id = ?) OR (c.connection1_id = ? AND c.connection2_id = u.user_id) WHERE u.user_id != ? GROUP BY u.user_id, u.name, u.headline";
   
   dbConnection.query(query, [userId, userId, userId, userId], (err, results) => {
     if (err) {
@@ -439,11 +498,16 @@ app.get('/api/connections/all', protectRoute, (req, res) => {
     
     const processedResults = results.map(user => {
       let connectionStatus = 'not_connected';
-      if (user.status === 'accepted') {
+      // user.status will be 1 (accepted), 0 (pending), or null (not connected)
+      
+      if (user.status === 1) { // Check for accepted (1)
         connectionStatus = 'connected';
-      } else if (user.status === 'pending') {
-        connectionStatus = user.request_direction === 'sent' ? 'pending_received' : 'pending_sent';
+      } else if (user.status === 0) { // Check for pending (0)
+        // is_sender is 1 if the current user initiated the request (pending_sent)
+        connectionStatus = user.is_sender === 1 ? 'pending_sent' : 'pending_received';
       }
+      // If status is NULL (no entry), it remains 'not_connected'
+
       return {
         user_id: user.user_id,
         name: user.name,
@@ -455,18 +519,24 @@ app.get('/api/connections/all', protectRoute, (req, res) => {
   });
 });
 
+
+// POST /api/connections/request - FIX: Enforce ID order to satisfy check constraint
 app.post('/api/connections/request', protectRoute, (req, res) => {
   const requesterId = req.userId;
-  const { receiverId } = req.body;
+  const receiverId = parseInt(req.body.receiverId); // Ensure it's an integer
 
   if (requesterId === receiverId) {
     return res.status(400).json({ error: 'Cannot connect with yourself.' });
   }
-
-  // FIX: Send INTEGER 0 for pending status
+    
+    // CRITICAL FIX: Ensure connection1_id < connection2_id
+    const id1 = Math.min(requesterId, receiverId);
+    const id2 = Math.max(requesterId, receiverId);
+    
+  // status = 0 for pending
   const query = 'INSERT INTO connections (connection1_id, connection2_id, status, created_at) VALUES (?, ?, 0, NOW())';
   
-  dbConnection.query(query, [requesterId, receiverId], (err, results) => {
+  dbConnection.query(query, [id1, id2], (err, results) => {
     if (err) {
       if (err.code === 'ER_DUP_ENTRY') {
         return res.status(201).json({ message: 'Connection request already exists or sent.' });
@@ -478,14 +548,19 @@ app.post('/api/connections/request', protectRoute, (req, res) => {
   });
 });
 
+// POST /api/connections/accept - FIX 2: Check for status = 0
 app.post('/api/connections/accept', protectRoute, (req, res) => {
   const receiverId = req.userId; // You are the receiver
-  const { requesterId } = req.body; // The person who sent it
+  const requesterId = parseInt(req.body.requesterId); // The person who sent it
   
-  // FIX: Send INTEGER 1 for accepted status and check for INTEGER 0 (pending)
+    // CRITICAL FIX: Ensure ID order matches the database structure
+    const id1 = Math.min(requesterId, receiverId);
+    const id2 = Math.max(requesterId, receiverId);
+    
+  // FIX: Update status = 1 where current status = 0
   const query = 'UPDATE connections SET status = 1 WHERE connection1_id = ? AND connection2_id = ? AND status = 0';
   
-  dbConnection.query(query, [requesterId, receiverId], (err, results) => {
+  dbConnection.query(query, [id1, id2], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.affectedRows === 0) {
       return res.status(404).json({ error: 'No pending request found.' });
